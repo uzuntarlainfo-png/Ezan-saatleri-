@@ -1,0 +1,34 @@
+name: Android APK Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Unzip Android project
+        run: |
+          unzip -o ArbeitszeitRechner_GitHub_Projekt.zip -d project
+
+      - name: Build APK
+        run: |
+          cd project
+          gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArbeitszeitRechner-APK
+          path: project/app/build/outputs/apk/debug/app-debug.apk

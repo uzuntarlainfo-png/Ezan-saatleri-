@@ -1,0 +1,72 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract project zip
+        run: |
+          ZIP_FILE=$(ls *.zip 2>/dev/null | head -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            unzip -o "$ZIP_FILE"
+          fi
+          SETTINGS_FILE=$(find . -maxdepth 4 \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
+          if [ -n "$SETTINGS_FILE" ]; then
+            PROJ_DIR=$(dirname "$SETTINGS_FILE")
+            if [ "$PROJ_DIR" != "." ]; then
+              cp -rn "$PROJ_DIR"/* "$PROJ_DIR"/.[!.]* . 2>/dev/null || true
+            fi
+          fi
+          if [ ! -f gradlew ]; then
+            echo '#!/usr/bin/env bash' > gradlew
+            echo 'exec gradle "$@"' >> gradlew
+          fi
+          sed -i 's/\r$//' gradlew
+          chmod +x gradlew
+
+      - name: Fix KSP and Kotlin sourceSets
+        run: |
+          KOTLIN_VER=$(grep -oE 'kotlin[^0-9]*[0-9]+\.[0-9]+\.[0-9]+' build.gradle.kts gradle/libs.versions.toml 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+          if [ -z "$KOTLIN_VER" ]; then
+            KOTLIN_VER="2.0.21"
+          fi
+          KSP_VER="${KOTLIN_VER}-1.0.28"
+          find . -maxdepth 4 \( -name "build.gradle.kts" -o -name "build.gradle" -o -name "libs.versions.toml" \) -exec sed -i -E "s/(2\.3\.5|2\.2\.10-2\.0\.2|2\.4\.21-1\.0\.29)/${KSP_VER}/g" {} +
+          touch gradle.properties
+          grep -q "android.disallowKotlinSourceSets" gradle.properties || echo "android.disallowKotlinSourceSets=false" >> gradle.properties
+
+      - name: Ensure google-services.json exists
+        run: |
+          DUMMY_JSON='{"project_info":{"project_number":"0","project_id":"placeholder","storage_bucket":"placeholder.appspot.com"},"client":[],"configuration_version":"1"}'
+          if [ -d "app" ]; then
+            [ ! -f "app/google-services.json" ] && echo "$DUMMY_JSON" > app/google-services.json
+            mkdir -p app/src/debug
+            [ ! -f "app/src/debug/google-services.json" ] && echo "$DUMMY_JSON" > app/src/debug/google-services.json
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: "**/build/outputs/apk/debug/*.apk"

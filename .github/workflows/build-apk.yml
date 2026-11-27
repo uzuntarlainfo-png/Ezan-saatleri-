@@ -19,13 +19,29 @@ jobs:
           java-version: '17'
 
       - name: Unzip Android project
+        run: unzip -o ArbeitszeitRechner_GitHub_Projekt.zip -d project
+
+      - name: Fix Java Kotlin compatibility
         run: |
-          unzip -o ArbeitszeitRechner_GitHub_Projekt.zip -d project
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("project/app/build.gradle")
+          s = p.read_text()
+          s = s.replace("    compileSdk 35", """    compileSdk 35
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }""")
+          p.write_text(s)
+          PY
 
       - name: Build APK
-        run: |
-          cd project
-          gradle assembleDebug
+        run: cd project && gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
